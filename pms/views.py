@@ -174,6 +174,65 @@ class EditBookingView(View):
             return redirect("/")
 
 
+class EditBookingDatesView(View):
+    # renders the booking dates edition form
+    def get(self, request, pk):
+        booking = Booking.objects.get(id=pk)
+        booking_dates_form = BookingEditDatesForm(instance=booking)
+        context = {
+            'booking': booking,
+            'booking_dates_form': booking_dates_form,
+            'error': None
+        }
+        return render(request, "edit_booking_dates.html", context)
+
+    # updates the booking dates with validation
+    @method_decorator(ensure_csrf_cookie)
+    def post(self, request, pk):
+        booking = Booking.objects.get(id=pk)
+        booking_dates_form = BookingEditDatesForm(request.POST, instance=booking)
+        
+        if booking_dates_form.is_valid():
+            new_checkin = booking_dates_form.cleaned_data['checkin']
+            new_checkout = booking_dates_form.cleaned_data['checkout']
+            
+            # Check if room is available for new dates
+            # Get all bookings for this room in the new date range (excluding current booking and deleted bookings)
+            conflicting_bookings = (Booking.objects
+                                   .filter(room=booking.room)
+                                   .filter(checkin__lte=new_checkout)
+                                   .filter(checkout__gte=new_checkin)
+                                   .exclude(id=booking.id)
+                                   .exclude(state="DEL"))
+            
+            if conflicting_bookings.exists():
+                error = "No hay disponibilidad para las fechas seleccionadas"
+                context = {
+                    'booking': booking,
+                    'booking_dates_form': booking_dates_form,
+                    'error': error
+                }
+                return render(request, "edit_booking_dates.html", context)
+            
+            # Calculate new total
+            total_days = new_checkout - new_checkin
+            booking.total = total_days.days * booking.room.room_type.price
+            
+            # Save the updated booking
+            booking_dates_form.save()
+            booking.total = total_days.days * booking.room.room_type.price
+            booking.save()
+            
+            return redirect("/")
+        
+        context = {
+            'booking': booking,
+            'booking_dates_form': booking_dates_form,
+            'error': None
+        }
+        return render(request, "edit_booking_dates.html", context)
+
+
 class DashboardView(View):
     def get(self, request):
         from datetime import date, time, datetime
@@ -202,19 +261,28 @@ class DashboardView(View):
                      .values("id")
                      ).count()
 
-        # get outcoming guests
+        # get invoiced
         invoiced = (Booking.objects
                     .filter(created__range=today_range)
                     .exclude(state="DEL")
                     .aggregate(Sum('total'))
                     )
 
+        # calculate occupation percentage
+        confirmed_bookings = (Booking.objects
+                             .exclude(state="DEL")
+                             .values("id")
+                             ).count()
+        total_rooms = Room.objects.count()
+        occupation_percentage = (confirmed_bookings / total_rooms * 100) if total_rooms > 0 else 0
+
         # preparing context data
         dashboard = {
             'new_bookings': new_bookings,
             'incoming_guests': incoming,
             'outcoming_guests': outcoming,
-            'invoiced': invoiced
+            'invoiced': invoiced,
+            'occupation_percentage': round(occupation_percentage, 2)
 
         }
 
@@ -240,7 +308,12 @@ class RoomsView(View):
     def get(self, request):
         # renders a list of rooms
         rooms = Room.objects.all().values("name", "room_type__name", "id")
+        # filter by room name if search query provided
+        search_query = request.GET.get('search', '')
+        if search_query:
+            rooms = rooms.filter(name__icontains=search_query)
         context = {
-            'rooms': rooms
+            'rooms': rooms,
+            'search_query': search_query
         }
         return render(request, "rooms.html", context)

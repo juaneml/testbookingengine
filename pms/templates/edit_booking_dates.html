@@ -1,0 +1,32 @@
+{% extends "main.html"%}
+
+{% block content %}
+<h1>Editar fechas de la reserva</h1>
+
+<div class="card p-3">
+    <div class="mb-3">
+        <p><strong>Código de reserva:</strong> {{booking.code}}</p>
+        <p><strong>Habitación:</strong> {{booking.room.name}}</p>
+        <p><strong>Huéspedes:</strong> {{booking.guests}}</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger">{{error}}</div>
+    {% endif %}
+
+    <form method="POST">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="id_checkin" class="form-label">{{booking_dates_form.checkin.label}}</label>
+            {{booking_dates_form.checkin}}
+        </div>
+        <div class="mb-3">
+            <label for="id_checkout" class="form-label">{{booking_dates_form.checkout.label}}</label>
+            {{booking_dates_form.checkout}}
+        </div>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a href="{% url 'home' %}" class="btn btn-secondary">Cancelar</a>
+    </form>
+</div>
+
+{% endblock content %}
